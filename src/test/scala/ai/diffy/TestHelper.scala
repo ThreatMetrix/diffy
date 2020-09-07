@@ -33,10 +33,12 @@ object TestHelper extends MockitoSugar {
     skipEmailsWhenNoErrors = false,
     httpsPort = "443",
     useFramedThriftTransport = false,
+    parallel = false,
     responseMode = ServiceInstance.Primary,
     maxHeaderSize = StorageUnit.fromKilobytes(32),
     maxResponseSize = StorageUnit.fromMegabytes(5),
-    sensitiveParameters = Set[String]()
+    sensitiveParameters = Set[String](),
+    limitPrefixes = Seq()
   )
 
   def makeEmptyJoinedDifferences = {

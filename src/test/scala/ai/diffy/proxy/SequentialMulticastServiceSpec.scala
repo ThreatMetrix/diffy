@@ -24,7 +24,7 @@ class SequentialMulticastServiceSpec extends ParentSpec {
       firstResponse.setValue("first")
       verify(second)("anyString")
       secondResponse.setValue("second")
-      Await.result(result) must be(Seq(Try("first"), Try("second")))
+      Await.result(result).map(_._1) must be(Seq(Try("first"), Try("second")))
     }
 
     it("should call all services") {
@@ -49,7 +49,7 @@ class SequentialMulticastServiceSpec extends ParentSpec {
         }
       }
       verifySequentialInteraction(svcResp.zipWithIndex)
-      Await.result(result) must be((0 until 100).toSeq map {i => Try(i)})
+      Await.result(result).map(_._1) must be((0 until 100).toSeq map {i => Try(i)})
     }
   }
 }
