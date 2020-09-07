@@ -18,15 +18,8 @@ class Frontend @Inject()(settings: Settings, isotopeClient: IsotopeClient) exten
     excludeNoise: Boolean,
     relativeThreshold: Double,
     absoluteThreshold: Double,
-    isotopeReason: String,
     hasIsotope: Boolean = false)
 
-  val reasons = Seq(
-    "Do you want to compare side effects like logs and downstream interactions?",
-    "Do you want to save and share this comparison?",
-    "Do you want to organize all your comparisons across all your services and teams in one place?",
-    "Do you want to download sampled traffic?"
-  )
   val reasonIndex = new AtomicInteger(0)
   get("/") { req: Request =>
     response.ok.view(
@@ -38,7 +31,6 @@ class Frontend @Inject()(settings: Settings, isotopeClient: IsotopeClient) exten
         req.params.getBooleanOrElse("exclude_noise", false),
         settings.relativeThreshold,
         settings.absoluteThreshold,
-        reasons(reasonIndex.getAndIncrement() % reasons.length),
         isotopeClient.isConcrete
       )
     )
