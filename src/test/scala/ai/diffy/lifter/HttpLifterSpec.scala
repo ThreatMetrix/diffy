@@ -12,7 +12,8 @@ import org.scalatest.junit.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class HttpLifterSpec extends ParentSpec {
   object Fixture {
-    val reqUri = "http://localhost:0/0/accounts"
+    val reqUri =         "http://localhost:0/0/accounts?private=somePrivateString"
+    val censoredReqUri = "http://localhost:0/0/accounts?private=xxxxxxxxxxxxxxxxx"
 
     val jsonContentType = MediaType.JSON_UTF_8.toString
     val textContentType = MediaType.PLAIN_TEXT_UTF_8.toString
@@ -132,6 +133,30 @@ class HttpLifterSpec extends ParentSpec {
         }
 
         thrown should be (testException)
+      }
+
+
+      val sensitiveJsonBody =
+        "{" +
+          "\"public\": {\"open\" : \"visible\"}," +
+          "\"private\": {\"secret\" : \"forbidden\"}" +
+        "}"
+
+      it("censor sensitive parameters") {
+        val lifter = new HttpLifter(false, None, Some(Set[String]("private")))
+        val requestBody = sensitiveJsonBody
+        val req = request(Method.Post, reqUri, Some(requestBody))
+        req.headerMap.add("Canonical-Resource", "endpoint")
+
+        val msg = Await.result(lifter.liftRequest(req))
+        val resultFieldMap: FieldMap[Any]= msg.result
+
+        msg.endpoint.get should equal ("endpoint")
+        resultFieldMap.get("uri").get should equal (censoredReqUri)
+        val body : FieldMap[Any] = resultFieldMap.get("body").get.asInstanceOf[FieldMap[Any]]
+        val value : FieldMap[Any] = body.get("value").get.asInstanceOf[FieldMap[Any]]
+        value.get("private").get should be ("redacted")
+        value.get("public").get should not be ("redacted")
       }
     }
   }
