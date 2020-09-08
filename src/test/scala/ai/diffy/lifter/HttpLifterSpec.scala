@@ -13,7 +13,6 @@ import org.scalatest.junit.JUnitRunner
 class HttpLifterSpec extends ParentSpec {
   object Fixture {
     val reqUri =         "http://localhost:0/0/accounts?private=somePrivateString"
-    val censoredReqUri = "http://localhost:0/0/accounts?private=xxxxxxxxxxxxxxxxx"
 
     val jsonContentType = MediaType.JSON_UTF_8.toString
     val textContentType = MediaType.PLAIN_TEXT_UTF_8.toString
@@ -152,11 +151,25 @@ class HttpLifterSpec extends ParentSpec {
         val resultFieldMap: FieldMap[Any]= msg.result
 
         msg.endpoint.get should equal ("endpoint")
-        resultFieldMap.get("uri").get should equal (censoredReqUri)
-        val body : FieldMap[Any] = resultFieldMap.get("body").get.asInstanceOf[FieldMap[Any]]
-        val value : FieldMap[Any] = body.get("value").get.asInstanceOf[FieldMap[Any]]
-        value.get("private").get should be ("redacted")
-        value.get("public").get should not be ("redacted")
+        resultFieldMap.get("uri").get should equal ("http://localhost:0/0/accounts?private=xxxxxxxxxxxxxxxxx")
+        val body = resultFieldMap.get("body")
+        body mustBe a [Option[FieldMap[_]]]
+        body should be ('defined)
+        val value = body.get.asInstanceOf[FieldMap[Any]].get("value")
+        value mustBe a [Option[FieldMap[_]]]
+        value should be ('defined)
+        val valueFieldMap : FieldMap[_] = value.get.asInstanceOf[FieldMap[Any]]
+        valueFieldMap.get("private").get should be ("redacted")
+        valueFieldMap.get("public").get should not be ("redacted")
+      }
+
+      it("lift simple text request") {
+        val lifter = new HttpLifter(false)
+        val lifted = lifter.liftText("a = b\nc = d\n");
+        lifted mustBe a [FieldMap[_]]
+        val liftedFieldMap : FieldMap[_] = lifted.asInstanceOf[FieldMap[Any]]
+        liftedFieldMap.get("a").get should be ("b")
+        liftedFieldMap.get("c").get should be ("d")
       }
     }
   }
