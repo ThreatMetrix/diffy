@@ -65,7 +65,8 @@ trait DifferenceProxy {
 
   private[this] lazy val multicastHandler = {
     val clients = Seq(primary, candidate, secondary) map { _.client }
-    if (settings.parallel) new ParallelMulticastService(clients) else new SequentialMulticastService(clients)
+    val responseIndex = ServiceInstance.all.indexOf(settings.responseMode)
+    if (settings.parallel) new ParallelMulticastService(clients, responseIndex) else new SequentialMulticastService(clients, responseIndex)
 
   }
 
@@ -74,36 +75,32 @@ trait DifferenceProxy {
     override def apply(req: Req): Future[Rep] = {
       Trace.disable()
       outstandingRequests.incrementAndGet()
-      val rawResponses: Future[Seq[(Try[Rep], Long, Long)]] =
-        multicastHandler(req) respond {
-          case Return(_) => log.debug("success networking")
-          case Throw(t) => log.debug(t, "error networking")
+      val (proxyResponse : Future[(Try[Rep])], rawResponses: Future[Seq[(Try[Rep], Long, Long)]]) =
+        multicastHandler.apply(req)
+
+      (rawResponses onFailure {
+        t => log.debug(t, "error networking")
+      } : Future[Seq[(Try[Rep], Long, Long)]]) flatMap { rs =>
+        log.debug("success networking" )
+        Future.collect(rs map {case (r, start, end) => liftResponse(r) map { (_, start, end)} })
+      } respond {
+        case Return(rs) =>
+          log.debug(s"success lifting ${rs.head._1.endpoint}")
+
+        case Throw(t) => log.debug(t, "error lifting")
+      } flatMap  {
+      case Seq(primaryResponse, candidateResponse, secondaryResponse) =>
+        liftRequest(req) respond {
+          case Return(m) =>
+            log.debug(s"success lifting request for ${m.endpoint}")
+
+          case Throw(t) => log.debug(t, "error lifting request")
+        } map { req =>
+          analyzer(req, candidateResponse, primaryResponse, secondaryResponse)
         }
-
-      val responses: Future[Seq[(Message, Long, Long)]] =
-        rawResponses flatMap { rs =>
-          Future.collect(rs map {case (r, start, end) => liftResponse(r) map { (_, start, end)} })
-        } respond {
-          case Return(rs) =>
-            log.debug(s"success lifting ${rs.head._1.endpoint}")
-
-          case Throw(t) => log.debug(t, "error lifting")
-        }
-
-      responses flatMap  {
-        case Seq(primaryResponse, candidateResponse, secondaryResponse) =>
-          liftRequest(req) respond {
-            case Return(m) =>
-              log.debug(s"success lifting request for ${m.endpoint}")
-
-            case Throw(t) => log.debug(t, "error lifting request")
-          } map { req =>
-            analyzer(req, candidateResponse, primaryResponse, secondaryResponse)
-          }
       } respond { _ => outstandingRequests.decrementAndGet }
 
-      val responseIndex = ServiceInstance.all.indexOf(settings.responseMode)
-      rawResponses map { _(responseIndex)._1} flatMap { Future.const }
+      proxyResponse flatMap { Future.const }
     }
   }
 
