@@ -37,4 +37,5 @@ case class Settings(
     maxResponseSize: StorageUnit,
     maxHeaderSize: StorageUnit,
     sensitiveParameters: Set[String],
-    limitPrefixes: Seq[String])
+    limitPrefixes: Seq[String],
+    supportHTML: Boolean)

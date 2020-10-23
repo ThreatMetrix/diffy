@@ -99,6 +99,9 @@ object DiffyServiceModule extends TwitterModule {
   val limitPrefixes =
     flag( "limitPrefixes", "", "Only analyse these URI prefixes")
 
+  val supportHTML =
+    flag[Boolean]( "supportHTML", true, "Check to see if something might be HTML")
+
   @Provides
   @Singleton
   def settings =
@@ -141,7 +144,8 @@ object DiffyServiceModule extends TwitterModule {
       maxHeaderSize = StorageUnit.parse(maxHeaderSize()),
       maxResponseSize = StorageUnit.parse(maxResponseSize()),
       sensitiveParameters = sensitiveParameters().split(',').filter(_.nonEmpty).toSet,
-      limitPrefixes = limitPrefixes().split(',').filter(_.nonEmpty)
+      limitPrefixes = limitPrefixes().split(',').filter(_.nonEmpty),
+      supportHTML = supportHTML()
     )
 
   @Provides
