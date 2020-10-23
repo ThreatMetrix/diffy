@@ -100,7 +100,7 @@ object DiffyServiceModule extends TwitterModule {
     flag( "limitPrefixes", "", "Only analyse these URI prefixes")
 
   val supportHTML =
-    flag[Boolean]( "supportHTML", true, "Check to see if something might be HTML")
+    flag[Boolean]( "supportHTML", false, "Check to see if something might be HTML")
 
   @Provides
   @Singleton

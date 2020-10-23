@@ -38,7 +38,8 @@ object TestHelper extends MockitoSugar {
     maxHeaderSize = StorageUnit.fromKilobytes(32),
     maxResponseSize = StorageUnit.fromMegabytes(5),
     sensitiveParameters = Set[String](),
-    limitPrefixes = Seq()
+    limitPrefixes = Seq(),
+    supportHTML = true
   )
 
   def makeEmptyJoinedDifferences = {
