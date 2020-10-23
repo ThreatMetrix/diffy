@@ -5,8 +5,8 @@ import java.net.SocketAddress
 import ai.diffy.analysis.{DifferenceAnalyzer, InMemoryDifferenceCollector, JoinedDifferences}
 import ai.diffy.lifter.{HttpLifter, Message}
 import com.twitter.finagle.http.{Method, Request, Response}
-import com.twitter.finagle.{Filter, Http, Service, SimpleFilter}
-import com.twitter.util.{Future, StorageUnit, Try}
+import com.twitter.finagle.{Filter, Http}
+import com.twitter.util.{Future, Try}
 
 object HttpDifferenceProxy {
   def requestHostHeaderFilter(host: String) =
@@ -20,7 +20,7 @@ trait HttpDifferenceProxy extends DifferenceProxy {
   import HttpDifferenceProxy._
   val servicePort: SocketAddress
   val lifter = new HttpLifter(settings.excludeHttpHeadersComparison, settings.resourceMatcher,
-    if (settings.sensitiveParameters.nonEmpty) Option(settings.sensitiveParameters) else None)
+    if (settings.sensitiveParameters.nonEmpty) Option(settings.sensitiveParameters) else None, settings.supportHTML)
 
   override type Req = Request
   override type Rep = Response

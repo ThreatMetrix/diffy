@@ -1,14 +1,14 @@
 package ai.diffy.lifter
 
 import java.net.URLDecoder
-import java.util.AbstractMap
+import java.util
 
 import ai.diffy.lifter.StringLifter.htmlRegexPattern
 import ai.diffy.util.ResourceMatcher
-import com.twitter.finagle.http.{ParamMap, Request, Response}
+import com.twitter.finagle.http.{Request, Response}
 import com.twitter.logging.Logger
 import com.twitter.util.{Future, Try}
-import java.util.{AbstractMap, List => JList, Map => JMap}
+import java.util.{List => JList, Map => JMap}
 
 import scala.collection.JavaConverters._
 import scala.util.control.NoStackTrace
@@ -20,7 +20,6 @@ object HttpLifter {
   val ControllerEndpointHeaderName = "X-Action-Name"
 
   def contentTypeNotSupportedException(contentType: String) = new Exception(s"Content type: $contentType is not supported")
-  def contentTypeNotSupportedExceptionFuture(contentType: String) = Future.exception(contentTypeNotSupportedException(contentType))
 
   case class MalformedJsonContentException(cause: Throwable)
     extends Exception("Malformed Json content")
@@ -29,7 +28,7 @@ object HttpLifter {
   }
 }
 
-class HttpLifter(excludeHttpHeadersComparison: Boolean, resourceMatcher: Option[ResourceMatcher] = None, sensitiveParameters: Option[Set[String]] = None) {
+class HttpLifter(excludeHttpHeadersComparison: Boolean, resourceMatcher: Option[ResourceMatcher] = None, sensitiveParameters: Option[Set[String]] = None, supportHtml: Boolean = true) {
 
   import HttpLifter._
 
@@ -62,7 +61,7 @@ class HttpLifter(excludeHttpHeadersComparison: Boolean, resourceMatcher: Option[
         if (stuff.size > 1) (stuff(0), stuff(1)) else (stuff(0), "")
       }), sensitive).map { case (key: String, value: String) => key + '=' + value }.mkString("&"))
     val redactedParameters = redactContainer(req.params, sensitive).toList.map {
-      case (k, v) => new AbstractMap.SimpleImmutableEntry(k, v).asInstanceOf[JMap.Entry[String, String]]
+      case (k, v) => new util.AbstractMap.SimpleImmutableEntry(k, v).asInstanceOf[JMap.Entry[String, String]]
     }
     (redactedParameters.asJava, redactedURI)
   }
@@ -74,10 +73,10 @@ class HttpLifter(excludeHttpHeadersComparison: Boolean, resourceMatcher: Option[
       .get("Canonical-Resource")
       .orElse(resourceMatcher.flatMap(_.resourceName(req.path)))
 
-    val (params: JList[JMap.Entry[String, String]], uri) = (sensitiveParameters match {
+    val (params: JList[JMap.Entry[String, String]], uri) = sensitiveParameters match {
       case None => (req.getParams(), req.uri)
       case Some(sensitive) => liftSensitiveParams(sensitive, req)
-    })
+    }
 
     val body = liftBody(req.getContentString())
     Future.value(
@@ -109,7 +108,7 @@ class HttpLifter(excludeHttpHeadersComparison: Boolean, resourceMatcher: Option[
         val endString: String  = if (index == -1) line else line.substring(index + 1).trim()
         val endBit = Try(JsonLifter.lift(JsonLifter.decode(endString))).getOrElse(endString)
         map + (startString -> (map.get(startString) match {
-          case Some(a: Seq[Any]) => (a :+ endBit)
+          case Some(a: Seq[Any]) => a :+ endBit
           case Some(a: Any) => Seq(a, endBit)
           case None => endBit
         }))
@@ -132,7 +131,7 @@ class HttpLifter(excludeHttpHeadersComparison: Boolean, resourceMatcher: Option[
 
         val endBit = Try(JsonLifter.lift(JsonLifter.decode(endString))).getOrElse(endString)
         map + (startString -> (map.get(startString) match {
-          case Some(a: Seq[Any]) => (a :+ endBit)
+          case Some(a: Seq[Any]) => a :+ endBit
           case Some(a: Any) => Seq(a, endBit)
           case None => endBit
         }))
@@ -140,32 +139,34 @@ class HttpLifter(excludeHttpHeadersComparison: Boolean, resourceMatcher: Option[
     FieldMap(asMap)
   }
 
-  def redactContainer[T >: String](traversable: TraversableOnce[(String, T)], sensitive: Set[String]): TraversableOnce[(String, T)] =
+  def redactContainer[T >: String](traversable: TraversableOnce[(_, T)], sensitive: Set[String]): TraversableOnce[(String, T)] =
   {
-    traversable.map { case (key: String, value) =>
-      (key,
-        if (sensitive.contains(key))
-          value match {
-            case strVal: String => strVal.map(_ => 'x')
-            case _ => "redacted"
-          }
-        else
-          value)
+    traversable.map {
+      case (key: String, value) =>
+        (key,
+          if (sensitive.contains(key))
+            value match {
+              case strVal: String => strVal.map(_ => 'x')
+              case _ => "redacted"
+            }
+          else
+            value)
+      case _ => ("invalid", "invalid")
     }
   }
 
-  def redactBody(unredacted: Any): Any = {
-    (sensitiveParameters, unredacted) match {
-      case (Some(sensitive), fieldMap: FieldMap[Any])  => FieldMap(redactContainer(fieldMap, sensitive).toMap)
-      case (Some(sensitive), map: Map[String, Any])  => FieldMap(redactContainer(map, sensitive).toMap)
-      case _ => unredacted
+  def redactBody(unRedacted: Any): Any = {
+    (sensitiveParameters, unRedacted) match {
+      case (Some(sensitive), fieldMap: FieldMap[_])  => FieldMap(redactContainer(fieldMap, sensitive).toMap)
+      case (Some(sensitive), map: Map[_, _])  => FieldMap(redactContainer(map, sensitive).toMap)
+      case _ => unRedacted
     }
   }
 
   def liftBody(string: String): Any = {
     Try(FieldMap(Map("type" -> "json", "value" -> redactBody(JsonLifter.lift(JsonLifter.decode(string)))))).getOrElse {
       Try(FieldMap(Map("type" -> "urlencoded", "value" -> redactBody(liftUrlEncoded(string))))).getOrElse {
-        if (htmlRegexPattern.findFirstIn(string).isDefined)
+        if (supportHtml && htmlRegexPattern.findFirstIn(string).isDefined)
           FieldMap(Map("type" -> "html", "value" -> HtmlLifter.lift(HtmlLifter.decode(string))))
         else FieldMap(Map("type" -> "text", "value" -> redactBody(liftText(string))))
       }
