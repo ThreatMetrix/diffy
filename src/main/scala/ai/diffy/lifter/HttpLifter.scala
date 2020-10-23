@@ -1,5 +1,6 @@
 package ai.diffy.lifter
 
+import java.net.URLDecoder
 import java.util.AbstractMap
 
 import ai.diffy.lifter.StringLifter.htmlRegexPattern
@@ -7,9 +8,9 @@ import ai.diffy.util.ResourceMatcher
 import com.twitter.finagle.http.{ParamMap, Request, Response}
 import com.twitter.logging.Logger
 import com.twitter.util.{Future, Try}
-import java.util.{AbstractMap, Map => JMap, List => JList}
-import scala.collection.JavaConverters._
+import java.util.{AbstractMap, List => JList, Map => JMap}
 
+import scala.collection.JavaConverters._
 import scala.util.control.NoStackTrace
 
 
@@ -104,10 +105,31 @@ class HttpLifter(excludeHttpHeadersComparison: Boolean, resourceMatcher: Option[
       (map, line) =>
       {
         val index = line indexOf '='
+        val startString: String = if (index == -1) "" else line.substring(0, index).trim()
+        val endString: String  = if (index == -1) line else line.substring(index + 1).trim()
+        val endBit = Try(JsonLifter.lift(JsonLifter.decode(endString))).getOrElse(endString)
+        map + (startString -> (map.get(startString) match {
+          case Some(a: Seq[Any]) => (a :+ endBit)
+          case Some(a: Any) => Seq(a, endBit)
+          case None => endBit
+        }))
+      })
+    FieldMap(asMap)
+  }
+
+  def liftUrlEncoded(string: String): Any = {
+    if (string.contains(' ') || string.contains('\n'))
+      throw KeyValParseError
+
+    val asMap = string.split('&').foldLeft( Map.empty[String,Any] )(
+      (map, line) =>
+      {
+        val index = line indexOf '='
         if (index == -1)
           throw KeyValParseError
-        val startString: String = line.substring(0, index).trim()
-        val endString: String  = line.substring(index + 1).trim()
+        val startString: String = URLDecoder.decode(line.substring(0, index), "UTF-8")
+        val endString: String  = URLDecoder.decode(line.substring(index + 1), "UTF-8")
+
         val endBit = Try(JsonLifter.lift(JsonLifter.decode(endString))).getOrElse(endString)
         map + (startString -> (map.get(startString) match {
           case Some(a: Seq[Any]) => (a :+ endBit)
@@ -135,16 +157,17 @@ class HttpLifter(excludeHttpHeadersComparison: Boolean, resourceMatcher: Option[
   def redactBody(unredacted: Any): Any = {
     (sensitiveParameters, unredacted) match {
       case (Some(sensitive), fieldMap: FieldMap[Any])  => FieldMap(redactContainer(fieldMap, sensitive).toMap)
+      case (Some(sensitive), map: Map[String, Any])  => FieldMap(redactContainer(map, sensitive).toMap)
       case _ => unredacted
     }
   }
 
   def liftBody(string: String): Any = {
     Try(FieldMap(Map("type" -> "json", "value" -> redactBody(JsonLifter.lift(JsonLifter.decode(string)))))).getOrElse {
-      Try(FieldMap(Map("type" -> "text", "value" -> redactBody(liftText(string))))).getOrElse {
+      Try(FieldMap(Map("type" -> "urlencoded", "value" -> redactBody(liftUrlEncoded(string))))).getOrElse {
         if (htmlRegexPattern.findFirstIn(string).isDefined)
           FieldMap(Map("type" -> "html", "value" -> HtmlLifter.lift(HtmlLifter.decode(string))))
-        else string
+        else FieldMap(Map("type" -> "text", "value" -> redactBody(liftText(string))))
       }
     }
   }

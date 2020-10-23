@@ -87,7 +87,6 @@ class HttpLifterSpec extends ParentSpec {
 
         msg.endpoint.get should equal ("endpoint")
         resultFieldMap.get("uri").get should equal (req.uri)
-        resultFieldMap.get("body").get should equal (requestBody)
       }
     }
 
